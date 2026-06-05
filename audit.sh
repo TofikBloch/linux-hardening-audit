@@ -94,9 +94,15 @@ check_firewall() {
 		else
 			fail "UFW is installed but NOT active - server is unprotected"
 		fi
-	else
-		fail "UFW not found - no firewall detected"
-	fi
+	elif command -v firewall-cmd &>/dev/null; then
+		if sudo firewall-cmd --state 2>/dev/null | grep -q "running"; then
+			pass "firewalld is active"
+		else
+			fail "firewalld is installed but NOT running"
+		fi   
+	else       
+		fail "No firewall detected - neither UFW nor firewalld found"
+	fi        
 }
 
 check_open_ports() {
@@ -123,23 +129,14 @@ check_failed_logins() {
 	echo ""
 	echo -e "${CYAN}>> Failed Login Attempt${RESET}"
 	echo ""
-
-	local log="/var/log/auth.log"
-
-	if [[ ! -f "$log" ]]; then
-		warn "Auth log not found - cannot check failed  logins"
-		return
-	fi
-
 	local fail_count
-	fail_count=$(grep -c "Failed password" "$log" 2>/dev/null)
-
+	fail_count=$(sudo journalctl -u sshd --since today 2>/dev/null | grep -ic "failed\|invalid\|connection closed by authenticating")
 	if [[ "$fail_count" -eq 0 ]]; then
-		pass "No Failed login attempts found"
+		pass "No failed login attempts found today"
 	elif [[ "$fail_count" -le 20 ]]; then
-		warn "$fail_count failed login attempts - monitor for brute force"
+		warn "$fail_count failed login attempts today - monitor for brute force"
 	else
-		fail "$fail_count failed logins - possible brute force"
+		fail "$fail_count failed login attempts today - active brute force detected"
 	fi
 }
 
@@ -191,7 +188,7 @@ check_world_writable() {
 print_summary() {
 	echo ""
 	echo -e "${CYAN}=====================================${RESET}"
-	echo -e "${CYAN}                 AUDIT SUMMARY${RESET}"
+	echo -e "${CYAN}         AUDIT SUMMARY${RESET}"
 	echo -e "${CYAN}=====================================${RESET}"
 	echo -e "  ${GREEN}PASS: $PASS${RESET}"
 	echo -e "  ${YELLOW}WARN: $WARN${RESET}"
